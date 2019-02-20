@@ -1,0 +1,618 @@
+function varargout = pca_presentation(varargin)
+% PCA_PRESENTATION MATLAB code for pca_presentation.fig
+%      PCA_PRESENTATION, by itself, creates a new PCA_PRESENTATION or raises the existing
+%      singleton*.
+%
+%      H = PCA_PRESENTATION returns the handle to a new PCA_PRESENTATION or the handle to
+%      the existing singleton*.
+%
+%      PCA_PRESENTATION('CALLBACK',hObject,eventData,handles,...) calls the local
+%      function named CALLBACK in PCA_PRESENTATION.M with the given input arguments.
+%
+%      PCA_PRESENTATION('Property','Value',...) creates a new PCA_PRESENTATION or raises the
+%      existing singleton*.  Starting from the left, property value pairs are
+%      applied to the GUI before pca_presentation_OpeningFcn gets called.  An
+%      unrecognized property name or invalid value makes property application
+%      stop.  All inputs are passed to pca_presentation_OpeningFcn via varargin.
+%
+%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
+%      instance to run (singleton)".
+%
+% See also: GUIDE, GUIDATA, GUIHANDLES
+
+% Edit the above text to modify the response to help pca_presentation
+
+% Last Modified by GUIDE v2.5 19-Feb-2019 14:39:09
+
+% Begin initialization code - DO NOT EDIT
+gui_Singleton = 1;
+gui_State = struct('gui_Name',       mfilename, ...
+    'gui_Singleton',  gui_Singleton, ...
+    'gui_OpeningFcn', @pca_presentation_OpeningFcn, ...
+    'gui_OutputFcn',  @pca_presentation_OutputFcn, ...
+    'gui_LayoutFcn',  [] , ...
+    'gui_Callback',   []);
+if nargin && ischar(varargin{1})
+    gui_State.gui_Callback = str2func(varargin{1});
+end
+
+if nargout
+    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
+else
+    gui_mainfcn(gui_State, varargin{:});
+end
+
+% --- Executes just before pca_presentation is made visible.
+function pca_presentation_OpeningFcn(hObject, eventdata, handles, varargin)
+% This function has no output args, see OutputFcn.
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% varargin   command line arguments to pca_presentation (see VARARGIN)
+
+% Choose default command line output for pca_presentation
+handles.output = hObject;
+
+handles.dataNeuron = varargin{1};
+ad = handles.dataNeuron.ad;
+
+% Analyzed data
+start_time_point = handles.dataNeuron.currenSegment(1);
+end_time_point = handles.dataNeuron.currenSegment(2);
+x_unfiltered = ad.Values(start_time_point:end_time_point);
+
+% MAIN VARIABLES                                    Section:
+ms = 1000;
+sample_rate = ad.ADFreq;
+
+HIGHPASS_ORDER = 10;                                % High pass filter
+HIGHPASS_CUTOFF = 0.03;                             % High pass filter
+
+DISPLAY_ORDER = 5;                                  % High pass filter for displaying the data
+DISPLAY_CUTOFF = 0.001;                             % High pass filter for displaying the data
+
+THRESHOLD = handles.dataNeuron.threshold;                   % Threshold
+UPPER_BOUND = handles.dataNeuron.upper_bound;               % Threshold
+POST_THRESHOLD_CUTOFF = 100;                        % Threshold
+BEFORE_THRESHOLD_LP = 2 * ad.ADFreq/ms;             % Threshold
+AFTER_THRESHOLD_LP = 8 * ad.ADFreq/ms;              % Threshold
+BEFORE_THRESHOLD_HP = 1.25 * ad.ADFreq/ms;          % Threshold
+AFTER_THRESHOLD_HP = 0.25 * ad.ADFreq/ms;           % Threshold
+
+BEFORE_THRESHOLD_JITTER = 0.5 * ad.ADFreq/ms;       % Jitter
+AFTER_THRESHOLD_JITTER = 4 * ad.ADFreq/ms;          % Jitter
+
+% General variables
+
+X_mag = abs(fft(x_unfiltered));
+N = length(x_unfiltered);
+fax_bins = [0:N-1];
+fax_Hz = fax_bins*ad.ADFreq/N;
+
+% Low pass filter
+lp_filtered = handles.dataNeuron.lp_filtered(start_time_point:end_time_point);
+
+% High pass filter
+
+[b_hp a_hp] = butter(HIGHPASS_ORDER, HIGHPASS_CUTOFF, 'high');
+H_hp = freqz(b_hp, a_hp, floor(N/2), 40000);
+hp_filtered = filtfilt(b_hp, a_hp, x_unfiltered);
+
+% High pass for displaying the data
+
+[b_display a_display] = butter(DISPLAY_ORDER, DISPLAY_CUTOFF, 'high');
+H_display = freqz(b_display, a_display, floor(N/2));
+display_filtered = filtfilt(b_display, a_display, x_unfiltered);
+
+% adding zero values if needed for threshold analysis
+x_aboveThreshold = find(lp_filtered > THRESHOLD);
+if max((x_aboveThreshold(end)+AFTER_THRESHOLD_LP),...
+        (x_aboveThreshold(end) + AFTER_THRESHOLD_HP)) > length(lp_filtered)
+    lp_filtered = [lp_filtered ; (THRESHOLD - 0.1)*ones(AFTER_THRESHOLD_LP, 1)];
+    hp_filtered = [hp_filtered ; (THRESHOLD - 0.1)*ones(AFTER_THRESHOLD_LP, 1)];
+    display_filtered = [display_filtered ; (THRESHOLD - 0.1)*ones(AFTER_THRESHOLD_LP, 1)];
+    x_unfiltered = [x_unfiltered ; (THRESHOLD - 0.1)*ones(AFTER_THRESHOLD_LP, 1)];
+end
+
+if min((x_aboveThreshold(1)-BEFORE_THRESHOLD_LP),(x_aboveThreshold(1)-BEFORE_THRESHOLD_HP)) < 1
+    lp_filtered = [(THRESHOLD - 0.1)*ones(BEFORE_THRESHOLD_LP, 1); lp_filtered];
+    hp_filtered = [(THRESHOLD - 0.1)*ones(BEFORE_THRESHOLD_LP, 1); hp_filtered];
+    display_filtered = [(THRESHOLD - 0.1)*ones(BEFORE_THRESHOLD_LP, 1); display_filtered];
+    x_unfiltered = [(THRESHOLD - 0.1)*ones(BEFORE_THRESHOLD_LP, 1); x_unfiltered];
+    x_aboveThreshold = x_aboveThreshold + BEFORE_THRESHOLD_LP;
+end
+
+% detects crossing threshold time points
+if isempty(x_aboveThreshold)
+    error('There is no crossing of the threshold. Reset the threshold.')
+end
+temp = [1 find(diff(x_aboveThreshold) > POST_THRESHOLD_CUTOFF)'+1];
+firstCross = x_aboveThreshold(temp);
+
+% Generates matrix of all detected spikes of low pass filtered data
+for index = 1:length(firstCross)
+    lowPassIndices(index, :) = (firstCross(index) - BEFORE_THRESHOLD_LP):...
+        (firstCross(index) + AFTER_THRESHOLD_LP);
+end
+[row_data_limit, col] = find(lowPassIndices > length(lp_filtered));
+lowPassIndices(unique(row_data_limit),:) = [];
+[row, col] = find(lp_filtered(lowPassIndices) > UPPER_BOUND);
+lowPassIndices(unique(row),:) = [];
+data_matrix_lp = lp_filtered(lowPassIndices);
+
+% Generates matrix of all detected spikes of *high* pass filtered data
+
+for index = 1:length(firstCross)
+    highPassIndices(index, :) = (firstCross(index) - BEFORE_THRESHOLD_HP):...
+        (firstCross(index) + AFTER_THRESHOLD_HP);
+end
+highPassIndices(unique(row_data_limit),:) = [];
+highPassIndices(unique(row),:) = [];
+data_matrix_hp = hp_filtered(highPassIndices);
+
+% Jitter for the high pass
+
+[minValues minIndices] = min(data_matrix_hp');
+for index = 1:length(minIndices)
+    jitter_mat_highpass(index, :) = (highPassIndices(index,minIndices(index)) - BEFORE_THRESHOLD_JITTER):...
+        (highPassIndices(index,minIndices(index)) + AFTER_THRESHOLD_JITTER);
+end
+data_matrix_hp_jitter = hp_filtered(jitter_mat_highpass);
+
+% PCA
+[coeffLp,scoreLp,latentLp] = pca(data_matrix_lp);
+[coeffHp, scoreHp, latentHp] = pca(data_matrix_hp_jitter);
+handles.data.scoreLp = scoreLp;
+handles.data.scoreHp = scoreHp;
+handles.data.data_matrix_lp = data_matrix_hp_jitter;
+handles.data.data_matrix_lp = data_matrix_lp;
+handles.data.highPassIndices = highPassIndices;
+handles.data.lowPassIndices = lowPassIndices;
+handles.data.hp_filtered = hp_filtered;
+handles.data.lp_filtered = lp_filtered;
+handles.data.jitter_mat_highpass = jitter_mat_highpass;
+handles.data.display_filtered = display_filtered;
+% update vector in
+handles.data.in = zeros(size(handles.data.scoreLp,1),1);
+setappdata(0,'in',handles.data.in);
+% ---
+handles.data.index = [];
+handles.data.indexColor = [];
+
+guidata(hObject, handles);
+
+% --- Outputs from this function are returned to the command line.
+function varargout = pca_presentation_OutputFcn(hObject, eventdata, handles)
+% varargout  cell array for returning output args (see VARARGOUT);
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Get default command line output from handles structure
+varargout{1} = handles.output;
+% 
+% function Scatter_Callback(hObject, eventdata, handles)
+% scoreLp = handles.data.scoreLp;
+% scoreHp = handles.data.scoreHp;
+% data_matrix_hp_jitter = handles.data.data_matrix_lp;
+% data_matrix_lp = handles.data.data_matrix_lp;
+% highPassIndices = handles.data.highPassIndices;
+% lowPassIndices = handles.data.lowPassIndices;
+% hp_filtered = handles.data.hp_filtered;
+% lp_filtered = handles.data.lp_filtered;
+% jitter_mat_highpass = handles.data.jitter_mat_highpass;
+% display_filtered = handles.data.display_filtered;
+% 
+% plotScatter(handles)
+% 
+% BEFORE_PLOT_HP = 10;                                % Plot analyzed data
+% AFTER_PLOT_HP = 30;                                 % Plot analyzed data
+% BEFORE_PLOT_ROW = 2000;                             % Plot analyzed data
+% AFTER_PLOT_ROW = 2000;                              % Plot analyzed data
+% 
+% save_AFTER_PLOT_ROW = AFTER_PLOT_ROW;
+% save_AFTER_PLOT_HP = AFTER_PLOT_HP;
+% save_BEFORE_PLOT_ROW = BEFORE_PLOT_ROW;
+% save_BEFORE_PLOT_HP = BEFORE_PLOT_HP;
+% 
+% button = 1;
+% count  = 1;
+% %--------------
+% while button == 1 | button == 3
+%     
+%     axes(handles.composedScatter)
+%     [x, y, button] = ginput(1);
+%     if isempty(button) | (button~=1 & button~=3)
+%         count = count -1;
+%         break;
+%     elseif button == 3
+%         disp_colors  = [.2 0 0 ; .9 .0 .0];
+%         indexColor(count) = 0;
+%     else
+%         disp_colors  = [.4 .8 .4 ; .2 .6 .6];
+%         indexColor(count) = 1;
+%     end
+%     
+%     [value_temp index_temp] = min(sqrt((x - scoreLp(:,1)).^2 + (y - scoreHp(:,1)).^2));
+%     value(count) = value_temp; index(count) = index_temp;
+%     axes(handles.composedScatter)
+%     scatter(scoreLp(index(count) ,1), scoreHp(index(count),1), 'MarkerEdgeColor', disp_colors(1,:), 'MarkerFaceColor', disp_colors(2,:), 'LineWidth',1.5); hold on
+%     dx = 1.5; dy = 1.5; % displacement so the text does not overlay the data points
+%     text(scoreLp(index(count) ,1) + dx, scoreHp(index(count),1) + dy, num2str(count) ,'FontWeight', 'bold','FontSize',9 );
+%     axes(handles.highScatter)
+%     scatter(scoreHp(index(count) ,1), scoreHp(index(count),2), 'MarkerEdgeColor',[.6 .6 .1], 'MarkerFaceColor',[.4 .4 .1], 'LineWidth',1.5); hold on
+%     axes(handles.lowScatter)
+%     scatter(scoreLp(index(count) ,1), scoreLp(index(count),2), 'MarkerEdgeColor',[.6 .6 .1], 'MarkerFaceColor',[.4 .4 .1], 'LineWidth',1.5); hold on
+%     if count > 1
+%         axes(handles.highScatter)
+%         scatter(scoreHp(index(count-1) ,1), scoreHp(index(count-1),2), 'MarkerEdgeColor',[0 .3 .8], 'MarkerFaceColor',[.4 .4 .9], 'LineWidth',1.5); hold on
+%         axes(handles.lowScatter)
+%         scatter(scoreLp(index(count-1) ,1), scoreLp(index(count-1),2), 'MarkerEdgeColor',[0 .3 .8], 'MarkerFaceColor',[.4 .4 .9], 'LineWidth',1.5); hold on
+%     end
+%     
+%     % reset display for segements near the boundaries
+%     if lowPassIndices(index(count), end) + AFTER_PLOT_ROW > length(hp_filtered)
+%         AFTER_PLOT_ROW = length(hp_filtered) - lowPassIndices(index(count), end);
+%         if lowPassIndices(index(count), end) + AFTER_PLOT_HP > length(hp_filtered)
+%             AFTER_PLOT_HP = length(hp_filtered) - lowPassIndices(index(count), end);
+%         end
+%         button = 0;
+%     end
+%     
+%     if lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW < 1
+%         save_BEFORE_PLOT_ROW = BEFORE_PLOT_ROW;
+%         BEFORE_PLOT_ROW = 1;
+%         if lowPassIndices(index(count) ,1)-BEFORE_PLOT_HP < 1
+%             save_BEFORE_PLOT_HP = BEFORE_PLOT_HP;
+%             BEFORE_PLOT_HP = 1;
+%         end
+%         button = 0;
+%     end
+%     %--------
+%     axes(handles.rowData)
+%     plot(lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW:lowPassIndices(index(count), end)+ AFTER_PLOT_ROW,...
+%         display_filtered(lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW:lowPassIndices(index(count), end) + AFTER_PLOT_ROW), 'color', [0.5 0.6 0.8])
+%     hold on
+%     plot(lowPassIndices(index(count), :),display_filtered(lowPassIndices(index(count), :)), 'color', [0.5 0.3 0.8])
+%     title(['Data - ' num2str(count)])
+%     axis([lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW lowPassIndices(index(count), end)+AFTER_PLOT_ROW -inf inf])
+%     
+%     %--------
+%     axes(handles.lowSeg)
+%     plot(data_matrix_lp(index(1:count-1), :)' , 'color', [0.6 0.8 0.6]);  hold on;
+%     plot(data_matrix_lp(index(count), :) , 'color', [0.2 0.4 0.2]);
+%     axis([0 length(data_matrix_lp(index(count), :)) -inf inf])
+%     
+%     axes(handles.highSeg)
+%     if count > 1
+%         temp_1 = jitter_mat_highpass(index(1:count-1),1)-BEFORE_PLOT_HP;
+%         temp_2 = jitter_mat_highpass(index(1:count-1),end)+AFTER_PLOT_HP;
+%         temp_mat12 = bsxfun(@plus,min(temp_1(:),temp_2(:)),0:abs(temp_1(1)-temp_2(1)))
+%         plot(hp_filtered(temp_mat12'), 'color', [0.7 0.8 1]); hold on;
+%     end
+%     plot(hp_filtered(jitter_mat_highpass(index(count),1)-BEFORE_PLOT_HP:jitter_mat_highpass(index(count),end)+AFTER_PLOT_HP), 'color', [0.3 0.3 0.5]);
+%     axis([0 length(jitter_mat_highpass(index(count),1)-BEFORE_PLOT_HP:jitter_mat_highpass(index(count),end)+AFTER_PLOT_HP) -inf inf])
+%     
+%     axes(handles.composedSeg)
+%     plot(display_filtered(lowPassIndices(index(1:count-1), :))', 'color', [0.8 0.8 0.87])
+%     hold on
+%     plot(display_filtered(lowPassIndices(index(count), :)), 'k')
+%     axis([0 length(data_matrix_lp(index(count), :)) -inf inf])
+%     
+%     count = count + 1;
+%     if ~button
+%         AFTER_PLOT_ROW = save_AFTER_PLOT_ROW;
+%         AFTER_PLOT_HP = save_AFTER_PLOT_HP;
+%         BEFORE_PLOT_ROW = save_BEFORE_PLOT_ROW;
+%         BEFORE_PLOT_HP = save_BEFORE_PLOT_HP;
+%         button = 1;
+%     end
+% end
+% handles.data.index = index;
+% handles.data.indexColor = indexColor;
+% guidata(hObject, handles);
+
+function plotScatter(handles)
+axes(handles.composedScatter)
+scatter(handles.data.scoreLp(:,1), handles.data.scoreHp(:,1), 'MarkerEdgeColor',[.2 0 0], 'MarkerFaceColor',[.7 .4 .4], 'LineWidth',.5); hold on
+xlabel('low frequency 1^{st} PC'); ylabel('High frequency 1^{st} PC');
+title('Low & high frequency data')
+axes(handles.highScatter)
+scatter(handles.data.scoreHp(:,1),handles.data.scoreHp(:,2),'MarkerEdgeColor',[.2 0 0], 'MarkerFaceColor',[.7 .4 .4], 'LineWidth',.5); hold on
+xlabel('1^{st} PC'); ylabel('2^{nd} PC');
+title('High pass frequency data')
+axes(handles.lowScatter)
+scatter(handles.data.scoreLp(:,1),handles.data.scoreLp(:,2),'MarkerEdgeColor',[.2 0 0], 'MarkerFaceColor',[.7 .4 .4], 'LineWidth',.5); hold on
+xlabel('1^{st} PC'); ylabel('2^{nd} PC');
+title('Low pass frequency data')
+
+% function clear_Callback(hObject, eventdata, handles)
+% 
+% cla(handles.composedScatter)
+% cla(handles.lowScatter)
+% cla(handles.highScatter)
+% cla(handles.lowSeg)
+% cla(handles.highSeg)
+% cla(handles.composedSeg)
+% cla(handles.rowData)
+% plotScatter(handles)
+% handles.data.index = [];
+% handles.data.indexColor = [];
+% % --- update vector in
+% handles.data.in = zeros(size(handles.data.scoreLp,1),1);
+% setappdata(0,'in',handles.data.in);
+% % ---
+% guidata(hObject, handles);
+% 
+
+% function polygon_Callback(hObject, eventdata, handles)
+% axes(handles.composedScatter)
+% polygon = impoly;
+% vertices = getPosition(polygon);
+% axes(handles.composedScatter)
+% [in, on] = inpolygon(handles.data.scoreLp(:,1), handles.data.scoreHp(:,1), vertices(:,1), vertices(:,2));
+% scatter(handles.data.scoreLp(in,1), handles.data.scoreHp(in,1), 'MarkerEdgeColor',[0 .5 .5], 'MarkerFaceColor',[0 .7 .7], 'LineWidth',1.5)
+% % --- update vector in
+% handles.data.in = or(getappdata(0,'in'),in);
+% setappdata(0,'in',handles.data.in);
+% % ---
+% guidata(hObject, handles);
+
+% function manual_Callback(hObject, eventdata, handles)
+% axes(handles.composedScatter)
+% polygon  = impoly;
+% vertices_boundaries = getPosition(polygon);
+% axes(handles.composedScatter)
+% [in_boundaries, on_boundaries] = inpolygon(handles.data.scoreLp(:,1), handles.data.scoreHp(:,1),vertices_boundaries(:,1),vertices_boundaries(:,2));
+% scatter(handles.data.scoreLp(in_boundaries,1), handles.data.scoreHp(in_boundaries,1), 'MarkerEdgeColor',[0 .3 .3], 'MarkerFaceColor',[0 .4 .4], 'LineWidth',1.5)
+% handles.data.in_boundaries = in_boundaries;
+% 
+% if sum(in_boundaries) > 0
+%     manual_clasification(handles);
+% end
+% 
+% 
+
+
+function composedScatter_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to composedScatter (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% --- Executes during object creation, after setting all properties.
+function segment_plot_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to segment_plot (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function lowScatter_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to lowScatter (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function highScatter_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to highScatter (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function composedSeg_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to composedSeg (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function lowSeg_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to lowSeg (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function highSeg_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to highSeg (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+function rowData_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to rowData (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+
+% --- Executes on button press in done.
+% function done_Callback(hObject, eventdata, handles)
+% save_name = [getappdata(0,'electrode'),'_',num2str(getappdata(0,'segment')),'_',getappdata(0,'electrode')];
+% if handles.dataNeuron.currenSegment(1)==1
+%     setappdata(0, save_name, handles.data.lowPassIndices(find(getappdata(0,'in')), 81));
+% else 
+%     setappdata(0, save_name, handles.dataNeuron.currenSegment(1) + handles.data.lowPassIndices(find(getappdata(0,'in')), 80));
+% end
+% if isempty(getappdata(0,'segmentList'))
+%     setappdata(0, 'segmentList', ['#',save_name, '#']);
+% elseif isempty(find(str2num(cell2mat(extractBetween(getappdata(0,'segmentList'),getappdata(0,'electrode'),getappdata(0,'electrode'))))==getappdata(0,'segment')))
+%     setappdata(0, 'segmentList', [getappdata(0,'segmentList'), '#', save_name,'#']);
+% end
+
+    
+% --------------------------------------------------------------------
+function polygonToolBar_ClickedCallback(hObject, eventdata, handles)
+axes(handles.composedScatter)
+polygon = impoly;
+vertices = getPosition(polygon);
+axes(handles.composedScatter)
+[in, on] = inpolygon(handles.data.scoreLp(:,1), handles.data.scoreHp(:,1), vertices(:,1), vertices(:,2));
+scatter(handles.data.scoreLp(in,1), handles.data.scoreHp(in,1), 'MarkerEdgeColor',[0 .5 .5], 'MarkerFaceColor',[0 .7 .7], 'LineWidth',1.5)
+% --- update vector in
+handles.data.in = or(getappdata(0,'in'),in);
+setappdata(0,'in',handles.data.in);
+% ---
+guidata(hObject, handles);
+
+
+% --------------------------------------------------------------------
+function scatterToolBar_ClickedCallback(hObject, eventdata, handles)
+scoreLp = handles.data.scoreLp;
+scoreHp = handles.data.scoreHp;
+data_matrix_hp_jitter = handles.data.data_matrix_lp;
+data_matrix_lp = handles.data.data_matrix_lp;
+highPassIndices = handles.data.highPassIndices;
+lowPassIndices = handles.data.lowPassIndices;
+hp_filtered = handles.data.hp_filtered;
+lp_filtered = handles.data.lp_filtered;
+jitter_mat_highpass = handles.data.jitter_mat_highpass;
+display_filtered = handles.data.display_filtered;
+
+plotScatter(handles)
+
+BEFORE_PLOT_HP = 10;                                % Plot analyzed data
+AFTER_PLOT_HP = 30;                                 % Plot analyzed data
+BEFORE_PLOT_ROW = 2000;                             % Plot analyzed data
+AFTER_PLOT_ROW = 2000;                              % Plot analyzed data
+
+save_AFTER_PLOT_ROW = AFTER_PLOT_ROW;
+save_AFTER_PLOT_HP = AFTER_PLOT_HP;
+save_BEFORE_PLOT_ROW = BEFORE_PLOT_ROW;
+save_BEFORE_PLOT_HP = BEFORE_PLOT_HP;
+
+button = 1;
+count  = 1;
+%--------------
+while button == 1 | button == 3
+    
+    axes(handles.composedScatter)
+    [x, y, button] = ginput(1);
+    if isempty(button) | (button~=1 & button~=3)
+        count = count -1;
+        break;
+    elseif button == 3
+        disp_colors  = [.2 0 0 ; .9 .0 .0];
+        indexColor(count) = 0;
+    else
+        disp_colors  = [.4 .8 .4 ; .2 .6 .6];
+        indexColor(count) = 1;
+    end
+    
+    [value_temp index_temp] = min(sqrt((x - scoreLp(:,1)).^2 + (y - scoreHp(:,1)).^2));
+    value(count) = value_temp; index(count) = index_temp;
+    axes(handles.composedScatter)
+    scatter(scoreLp(index(count) ,1), scoreHp(index(count),1), 'MarkerEdgeColor', disp_colors(1,:), 'MarkerFaceColor', disp_colors(2,:), 'LineWidth',1.5); hold on
+    dx = 1.5; dy = 1.5; % displacement so the text does not overlay the data points
+    text(scoreLp(index(count) ,1) + dx, scoreHp(index(count),1) + dy, num2str(count) ,'FontWeight', 'bold','FontSize',9 );
+    axes(handles.highScatter)
+    scatter(scoreHp(index(count) ,1), scoreHp(index(count),2), 'MarkerEdgeColor',[.6 .6 .1], 'MarkerFaceColor',[.4 .4 .1], 'LineWidth',1.5); hold on
+    axes(handles.lowScatter)
+    scatter(scoreLp(index(count) ,1), scoreLp(index(count),2), 'MarkerEdgeColor',[.6 .6 .1], 'MarkerFaceColor',[.4 .4 .1], 'LineWidth',1.5); hold on
+    if count > 1
+        axes(handles.highScatter)
+        scatter(scoreHp(index(count-1) ,1), scoreHp(index(count-1),2), 'MarkerEdgeColor',[0 .3 .8], 'MarkerFaceColor',[.4 .4 .9], 'LineWidth',1.5); hold on
+        axes(handles.lowScatter)
+        scatter(scoreLp(index(count-1) ,1), scoreLp(index(count-1),2), 'MarkerEdgeColor',[0 .3 .8], 'MarkerFaceColor',[.4 .4 .9], 'LineWidth',1.5); hold on
+    end
+    
+    % reset display for segements near the boundaries
+    if lowPassIndices(index(count), end) + AFTER_PLOT_ROW > length(hp_filtered)
+        AFTER_PLOT_ROW = length(hp_filtered) - lowPassIndices(index(count), end);
+        if lowPassIndices(index(count), end) + AFTER_PLOT_HP > length(hp_filtered)
+            AFTER_PLOT_HP = length(hp_filtered) - lowPassIndices(index(count), end);
+        end
+        button = 0;
+    end
+    
+    if lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW < 1
+        save_BEFORE_PLOT_ROW = BEFORE_PLOT_ROW;
+        BEFORE_PLOT_ROW = 1;
+        if lowPassIndices(index(count) ,1)-BEFORE_PLOT_HP < 1
+            save_BEFORE_PLOT_HP = BEFORE_PLOT_HP;
+            BEFORE_PLOT_HP = 1;
+        end
+        button = 0;
+    end
+    %--------
+    axes(handles.rowData)
+    plot(lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW:lowPassIndices(index(count), end)+ AFTER_PLOT_ROW,...
+        display_filtered(lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW:lowPassIndices(index(count), end) + AFTER_PLOT_ROW), 'color', [0.5 0.6 0.8])
+    hold on
+    plot(lowPassIndices(index(count), :),display_filtered(lowPassIndices(index(count), :)), 'color', [0.5 0.3 0.8])
+    title(['Data - ' num2str(count)])
+    axis([lowPassIndices(index(count) ,1)-BEFORE_PLOT_ROW lowPassIndices(index(count), end)+AFTER_PLOT_ROW -inf inf]);
+    
+    %--------
+    axes(handles.lowSeg)
+    plot(data_matrix_lp(index(1:count-1), :)' , 'color', [0.6 0.8 0.6]);  hold on;
+    plot(data_matrix_lp(index(count), :) , 'color', [0.2 0.4 0.2]);
+    axis([0 length(data_matrix_lp(index(count), :)) -inf inf]);
+    
+    axes(handles.highSeg)
+    if count > 1
+        temp_1 = jitter_mat_highpass(index(1:count-1),1)-BEFORE_PLOT_HP;
+        temp_2 = jitter_mat_highpass(index(1:count-1),end)+AFTER_PLOT_HP;
+        temp_mat12 = bsxfun(@plus,min(temp_1(:),temp_2(:)),0:abs(temp_1(1)-temp_2(1)));
+        plot(hp_filtered(temp_mat12'), 'color', [0.7 0.8 1]); hold on;
+    end
+    plot(hp_filtered(jitter_mat_highpass(index(count),1)-BEFORE_PLOT_HP:jitter_mat_highpass(index(count),end)+AFTER_PLOT_HP), 'color', [0.3 0.3 0.5]);
+    axis([0 length(jitter_mat_highpass(index(count),1)-BEFORE_PLOT_HP:jitter_mat_highpass(index(count),end)+AFTER_PLOT_HP) -inf inf]);
+    
+    axes(handles.composedSeg);
+    plot(display_filtered(lowPassIndices(index(1:count-1), :))', 'color', [0.8 0.8 0.87]);
+    hold on
+    plot(display_filtered(lowPassIndices(index(count), :)), 'k');
+    axis([0 length(data_matrix_lp(index(count), :)) -inf inf]);
+    
+    count = count + 1;
+    if ~button
+        AFTER_PLOT_ROW = save_AFTER_PLOT_ROW;
+        AFTER_PLOT_HP = save_AFTER_PLOT_HP;
+        BEFORE_PLOT_ROW = save_BEFORE_PLOT_ROW;
+        BEFORE_PLOT_HP = save_BEFORE_PLOT_HP;
+        button = 1;
+    end
+end
+handles.data.index = index;
+handles.data.indexColor = indexColor;
+guidata(hObject, handles);
+
+
+% --------------------------------------------------------------------
+function manualClassifierToolBar_ClickedCallback(hObject, eventdata, handles)
+axes(handles.composedScatter)
+polygon  = impoly;
+vertices_boundaries = getPosition(polygon);
+axes(handles.composedScatter)
+[in_boundaries, on_boundaries] = inpolygon(handles.data.scoreLp(:,1), handles.data.scoreHp(:,1),vertices_boundaries(:,1),vertices_boundaries(:,2));
+scatter(handles.data.scoreLp(in_boundaries,1), handles.data.scoreHp(in_boundaries,1), 'MarkerEdgeColor',[0 .3 .3], 'MarkerFaceColor',[0 .4 .4], 'LineWidth',1.5)
+handles.data.in_boundaries = in_boundaries;
+
+if sum(in_boundaries) > 0
+    manual_clasification(handles);
+end
+
+
+% --------------------------------------------------------------------
+function clearToolBar_ClickedCallback(hObject, eventdata, handles)
+cla(handles.composedScatter)
+cla(handles.lowScatter)
+cla(handles.highScatter)
+cla(handles.lowSeg)
+cla(handles.highSeg)
+cla(handles.composedSeg)
+cla(handles.rowData)
+plotScatter(handles)
+handles.data.index = [];
+handles.data.indexColor = [];
+% --- update vector in
+handles.data.in = zeros(size(handles.data.scoreLp,1),1);
+setappdata(0,'in',handles.data.in);
+% ---
+guidata(hObject, handles);
+
+
+% --------------------------------------------------------------------
+function saveToolBar_ClickedCallback(hObject, eventdata, handles)
+save_name = [getappdata(0,'electrode'),'_',num2str(getappdata(0,'segment')),'_',getappdata(0,'electrode')];
+if handles.dataNeuron.currenSegment(1)==1
+    setappdata(0, save_name, handles.data.lowPassIndices(find(getappdata(0,'in')), 81));
+else 
+    setappdata(0, save_name, handles.dataNeuron.currenSegment(1) + handles.data.lowPassIndices(find(getappdata(0,'in')), 80));
+end
+if isempty(getappdata(0,'segmentList'))
+    setappdata(0, 'segmentList', ['#',save_name, '#']);
+elseif isempty(find(str2num(cell2mat(extractBetween(getappdata(0,'segmentList'),getappdata(0,'electrode'),getappdata(0,'electrode'))))==getappdata(0,'segment')))
+    setappdata(0, 'segmentList', [getappdata(0,'segmentList'), '#', save_name,'#']);
+end
