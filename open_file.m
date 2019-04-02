@@ -23,7 +23,7 @@ function varargout = show_data(varargin)
 
 % Edit the above text to modify the response to help show_data
 
-% Last Modified by GUIDE v2.5 19-Feb-2019 11:59:53
+% Last Modified by GUIDE v2.5 31-Mar-2019 11:48:15
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -81,14 +81,12 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-
 % --- Executes on slider movement.
 function threshold_Callback(hObject, eventdata, handles)
 threshold_val = get(hObject, 'Value');
 set(handles.threshold_edit, 'string', num2str(threshold_val));
 present_data(handles)
 guidata(hObject, handles);
-
 
 function threshold_edit_Callback(hObject, eventdata, handles)
 edited_val = get(hObject,'string');
@@ -102,6 +100,19 @@ set(handles.upper_bound_slider,'value',str2num(bound_val));
 handles.dataNeuron.upper_bound = get(handles.upper_bound_slider,'value');
 guidata(hObject,handles);
 
+function segment_length_Callback(hObject, eventdata, handles)
+segLength_val = get(hObject,'string');
+handles.dataNeuron.segment_length = segLength_val;
+seg = find(mod(handles.dataNeuron.time, str2num(segLength_val))==0)';
+if seg(end) ~= handles.dataNeuron.ad.FragCounts-1
+    seg = [seg; handles.dataNeuron.ad.FragCounts-1];
+end
+set(handles.Segment_menu,'String', 'Segment');
+set(handles.segRadioButton,'Value', 0);
+handles.dataNeuron.segment = seg;
+seg_val = set(handles.Segment_menu,'Value', 1);
+handles.dataNeuron.currenSegment = [seg(seg_val), seg(seg_val+1)];
+guidata(hObject,handles);
 
 % --- Executes on slider movement.
 function upper_bound_slider_Callback(hObject, eventdata, handles)
@@ -111,8 +122,6 @@ handles.dataNeuron.upper_bound = bound_val;
 guidata(hObject, handles);
 
 
-
-% --- Executes during object creation, after setting all properties.
 function threshold_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to threshold (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -123,9 +132,6 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-
-
-% --- Executes during object creation, after setting all properties.
 function threshold_edit_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to threshold_edit (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -137,8 +143,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-
-% --- Executes during object creation, after setting all properties.
 function data_shower_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to data_shower (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -148,7 +152,6 @@ function file_name_Callback(hObject, eventdata, handles)
 % hObject    handle to file_name (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-
 
 % --- Executes during object creation, after setting all properties.
 function file_name_CreateFcn(hObject, eventdata, handles)
@@ -174,7 +177,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-% --- Executes during object creation, after setting all properties.
 function upper_bound_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to upper_bound (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -186,8 +188,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-
-% --- Executes during object creation, after setting all properties.
 function upper_bound_slider_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to upper_bound_slider (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -198,19 +198,24 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-
-% --- Executes on selection change in Segment_menu.
 function Segment_menu_Callback(hObject, eventdata, handles)
 val = get(hObject, 'Value');
 seg = handles.dataNeuron.segment;
 handles.dataNeuron.currenSegment = [seg(val), seg(val+1)];
-
 present_data(handles)
 guidata(hObject, handles)
 
+function segment_length_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to segment_length (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
 
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 
-% --- Executes during object creation, after setting all properties.
 function Segment_menu_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to Segment_menu (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -222,8 +227,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-
-% --- Executes on button press in segRadioButton.
 function segRadioButton_Callback(hObject, eventdata, handles)
 val = get(hObject, 'Value');
 if val==0
@@ -259,9 +262,6 @@ else
     plot(time, data, 'k', time, ones(1,length(time))*threshold, 'b', time, lp_filtered, 'r');
 end
 
-
-
-% --- Executes on button press in loadFileButton.
 function loadFileButton_Callback(hObject, eventdata, handles)
 % rerefrash variables
 setappdata(0,'segment',[]);
@@ -296,8 +296,6 @@ handles.dataNeuron.upper_bound = get(handles.upper_bound_slider,'value');
 present_data(handles)
 guidata(hObject, handles)
 
-
-% --- Executes on button press in analyze_pca.
 function analyze_pca_Callback(hObject, eventdata, handles)
 handles.dataNeuron.threshold = get(handles.threshold, 'Value');
 handles.dataNeuron.upper_bound = get(handles.upper_bound_slider,'Value');
@@ -328,8 +326,6 @@ else
     end
 end
 
-
-% --- Executes when user attempts to close open_file.
 function open_file_CloseRequestFcn(hObject, eventdata, handles)
 if ~isempty(getappdata(0,'segmentList'))
     file = extractBetween(getappdata(0,'segmentList'),'#','#');
@@ -341,7 +337,6 @@ setappdata(0,'segment',[]);
 setappdata(0,'electrode', []);
 setappdata(0, 'segmentList', []);
 delete(hObject);
-
 
 % --------------------------------------------------------------------
 function uipushtool2_ClickedCallback(hObject, eventdata, handles)
