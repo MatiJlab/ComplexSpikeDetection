@@ -608,10 +608,10 @@ function saveToolBar_ClickedCallback(hObject, eventdata, handles)
 save_name = [getappdata(0,'electrode'),'_',num2str(getappdata(0,'segment')),'_',getappdata(0,'electrode')];
 if handles.dataNeuron.currenSegment(1)==1
     setappdata(0, save_name, handles.data.lowPassIndices(find(getappdata(0,'in')), 81) +...
-        handles.dataNeuron.startRecording);
+        handles.dataNeuron.startRecording*handles.dataNeuron.ad.ADFreq);
 else 
     setappdata(0, save_name, handles.dataNeuron.currenSegment(1) + handles.data.lowPassIndices(find(getappdata(0,'in')), 80) +...
-        handles.dataNeuron.startRecording);
+        handles.dataNeuron.startRecording*handles.dataNeuron.ad.ADFreq);
 end
 if isempty(getappdata(0,'segmentList'))
     setappdata(0, 'segmentList', ['#',save_name, '#']);

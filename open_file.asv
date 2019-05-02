@@ -23,7 +23,7 @@ function varargout = show_data(varargin)
 
 % Edit the above text to modify the response to help show_data
 
-% Last Modified by GUIDE v2.5 31-Mar-2019 11:03:40
+% Last Modified by GUIDE v2.5 28-Apr-2019 17:21:51
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -110,9 +110,8 @@ end
 set(handles.Segment_menu,'String', 'Segment');
 set(handles.segRadioButton,'Value', 0);
 handles.dataNeuron.segment = seg;
-seg_val = get(handles.Segment_menu,'Value');
+seg_val = set(handles.Segment_menu,'Value', 1);
 handles.dataNeuron.currenSegment = [seg(seg_val), seg(seg_val+1)];
-
 guidata(hObject,handles);
 
 % --- Executes on slider movement.
@@ -122,13 +121,7 @@ set(handles.upper_bound, 'string', num2str(bound_val));
 handles.dataNeuron.upper_bound = bound_val;
 guidata(hObject, handles);
 
-
 function threshold_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to threshold (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: slider controls usually have a light gray background.
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
@@ -156,12 +149,7 @@ function file_name_Callback(hObject, eventdata, handles)
 
 % --- Executes during object creation, after setting all properties.
 function file_name_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to file_name (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
 
-% Hint: edit controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
@@ -179,22 +167,12 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function upper_bound_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to upper_bound (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: edit controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
 function upper_bound_slider_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to upper_bound_slider (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
 
-% Hint: slider controls usually have a light gray background.
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
@@ -277,11 +255,37 @@ threshold = get(handles.threshold, 'Value');
 file = fullfile(get(handles.file_directory, 'String'),get(handles.file_name, 'String'));
 % load the data
 [ad] = PL2Ad(file,electrode);
-time = [0:ad.FragCounts-1]/ad.ADFreq;
 % low filtereing the data
 [b_lp a_lp] = butter(LOWPASS_ORDER, [LOPPASS_DOWN LOWPASS_UP],'bandpass');
-H_lp = freqz(b_lp, a_lp, floor(ad.FragCounts/2));
-lp_filtered = filtfilt(b_lp, a_lp, ad.Values);
+if get(handles.startRecording,'Value') | get(handles.endRecording,'Value')
+    if get(handles.startRecording,'Value') & get(handles.endRecording,'Value')
+        time = [get(handles.startRecording,'Value')*ad.ADFreq:get(handles.endRecording,'Value')*ad.ADFreq];
+        H_lp = freqz(b_lp, a_lp, floor(length(time)/2));
+        lp_filtered = filtfilt(b_lp, a_lp, ad.Values(time));
+    elseif get(handles.startRecording,'Value') & ~get(handles.endRecording,'Value')
+        time = [get(handles.startRecording,'Value')*ad.ADFreq:ad.FragCounts-1];
+        H_lp = freqz(b_lp, a_lp, floor(length(time)/2));
+        lp_filtered = filtfilt(b_lp, a_lp, ad.Values(time));
+    else ~get(handles.startRecording,'Value') & get(handles.endRecording,'Value')
+        time = [0:ad.get(handles.endRecording,'Value')*ad.ADFreq-1];
+        H_lp = freqz(b_lp, a_lp, floor(length(time)/2));
+        lp_filtered = filtfilt(b_lp, a_lp, ad.Values(time));
+    end
+    % Notice -> the following code cut and update the ad struct (!)
+    ad.Values = ad.Values(time); ad.FragCounts = length(time);
+    time = (time - get(handles.startRecording,'Value'))/ad.ADFreq;
+    handles.dataNeuron.startRecording = get(handles.startRecording,'Value') * ad.ADFreq;
+else
+    time = [0:ad.FragCounts-1]/ad.ADFreq;
+    H_lp = freqz(b_lp, a_lp, floor(ad.FragCounts/2));
+    lp_filtered = filtfilt(b_lp, a_lp, ad.Values);
+    handles.dataNeuron.startRecording = 0;
+    
+end
+
+% disable "Recording time" buttons  
+set(handles.startRecording,'Enable', 'off')
+set(handles.endRecording,'Enable', 'off')
 % divide the data to segments
 seg = find(mod(time,180)==0)';
 if seg(end)~=ad.FragCounts-1
@@ -306,7 +310,6 @@ setappdata(0,'segment',handles.Segment_menu.Value);
 setappdata(0,'electrode',handles.electrode.String{handles.electrode.Value});
 
 pca_presentation(dataNeuron)
-
 
 % --------------------------------------------------------------------
 function uipushtool1_ClickedCallback(hObject, eventdata, handles)
@@ -349,3 +352,28 @@ else
     set(handles.file_directory,'string',fullfile(path))
 end
 
+
+function startRecording_Callback(hObject, eventdata, handles)
+set(hObject,'Value', str2num(get(hObject, 'String')));
+handles.dataNeuron.startRecording = str2num(get(hObject, 'String'));
+guidata(hObject,handles);
+
+function startRecording_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to startRecording (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function endRecording_Callback(hObject, eventdata, handles)
+set(hObject,'Value', str2num(get(hObject, 'String')));
+guidata(hObject,handles);
+
+function endRecording_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
